@@ -4,3 +4,4 @@ chroma_db/
 study_buddy.db
 __pycache__/
 .pytest_cache/
+.venv/
