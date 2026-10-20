@@ -6,7 +6,6 @@ load_dotenv()
 
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
-
 def get_llm(temperature=0.3):
     """Return the Gemini chat model."""
     return ChatGoogleGenerativeAI(model=MODEL_NAME, temperature=temperature)

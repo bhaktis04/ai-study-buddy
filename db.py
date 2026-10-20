@@ -48,6 +48,7 @@ def create_session(title):
 
 
 def add_message(session_id, role, content, sources=None):
+    """Save one message (role is 'user' or 'assistant')."""
     with closing(_conn()) as c:
         c.execute(
             "INSERT INTO messages (session_id, role, content, sources, created_at) "
@@ -68,6 +69,7 @@ def get_messages(session_id):
 
 
 def list_sessions():
+    """Return all chats, newest first, as (id, title, created_at)."""
     with closing(_conn()) as c:
         return c.execute(
             "SELECT id, title, created_at FROM sessions ORDER BY created_at DESC"
@@ -91,6 +93,7 @@ def save_quiz_result(topic, score, total):
 
 
 def get_quiz_results():
+    """Return quiz scores, newest first, as (topic, score, total, created_at)."""
     with closing(_conn()) as c:
         return c.execute(
             "SELECT topic, score, total, created_at FROM quiz_results ORDER BY id DESC"
