@@ -5,7 +5,9 @@ import streamlit as st
 import db
 import ui
 from ingest import DATA_DIR, build_vectorstore
+from interview import evaluate_answer, get_interview_question
 from llm import friendly_error
+from quiz import generate_quiz
 from rag import ask, get_retriever
 
 st.set_page_config(page_title="AI Study Buddy", page_icon="🤖")
@@ -17,6 +19,8 @@ PAGES = ["Study Chat", "History", "Quizzes", "Interview Practice"]
 # ---------- Session state ----------
 st.session_state.setdefault("session_id", None)
 st.session_state.setdefault("page", "Study Chat")
+st.session_state.setdefault("asked", [])
+st.session_state.setdefault("quiz_id", 0)
 
 
 def open_session(sid):
@@ -34,6 +38,11 @@ def show_sources(sources):
         with st.expander("Sources"):
             for s in sources:
                 st.write("•", s)
+
+
+def error_text(e):
+    """Readable message for API errors; quiz generation raises its own ValueError."""
+    return str(e) if isinstance(e, ValueError) else friendly_error(e)
 
 
 # ---------- Sidebar ----------
@@ -117,12 +126,106 @@ elif page == "History":
     for topic, score, total, when in results:
         st.write(f"{when} — {topic}: **{score}/{total}**")
 
-# ---------- Quizzes (coming in a later module) ----------
+# ---------- Quizzes ----------
 elif page == "Quizzes":
     ui.page_header("Quizzes", "Test yourself on any topic.")
-    st.info("Quizzes arrive in a later step.")
 
-# ---------- Interview Practice (coming in a later module) ----------
+    topic = st.text_input("Topic", placeholder="e.g. SQL joins, Python decorators")
+    c1, c2 = st.columns(2)
+    n = c1.slider("Questions", 3, 10, 5)
+    level = c2.selectbox("Level", ["beginner", "intermediate", "advanced"])
+
+    if st.button("Generate quiz", type="primary"):
+        if not topic.strip():
+            st.warning("Enter a topic first.")
+        else:
+            with st.spinner("Creating quiz..."):
+                try:
+                    st.session_state.quiz = generate_quiz(topic.strip(), n, level)
+                    st.session_state.quiz_topic = topic.strip()
+                    st.session_state.quiz_id += 1
+                    st.session_state.quiz_result = None
+                except Exception as e:
+                    st.error(error_text(e))
+
+    quiz = st.session_state.get("quiz")
+    if quiz:
+        qid = st.session_state.quiz_id
+        st.divider()
+        st.subheader(f"Quiz: {st.session_state.quiz_topic}")
+
+        with st.form(f"quiz_form_{qid}"):
+            answers = [
+                st.radio(f"{i + 1}. {q['question']}", q["options"], index=None, key=f"q{qid}_{i}")
+                for i, q in enumerate(quiz)
+            ]
+            submitted = st.form_submit_button("Submit answers")
+
+        if submitted:
+            score = sum(
+                1 for i, q in enumerate(quiz) if answers[i] == q["options"][q["answer"]]
+            )
+            already_saved = (st.session_state.get("quiz_result") or {}).get("qid") == qid
+            if not already_saved:
+                db.save_quiz_result(st.session_state.quiz_topic, score, len(quiz))
+            st.session_state.quiz_result = {"qid": qid, "answers": answers, "score": score}
+
+        result = st.session_state.get("quiz_result")
+        if result and result["qid"] == qid:
+            for i, q in enumerate(quiz):
+                correct = q["options"][q["answer"]]
+                chosen = result["answers"][i]
+                if chosen == correct:
+                    st.success(f"Q{i + 1}: Correct")
+                elif chosen is None:
+                    st.warning(f"Q{i + 1}: Not answered. Correct answer: {correct}")
+                else:
+                    st.error(f"Q{i + 1}: Wrong. Correct answer: {correct}")
+                st.caption(q["explanation"])
+            st.subheader(f"Score: {result['score']}/{len(quiz)}")
+
+# ---------- Interview Practice ----------
 else:
     ui.page_header("Interview Practice", "Practice questions and get instant feedback.")
-    st.info("Interview practice arrives in a later step.")
+
+    topic = st.text_input(
+        "Topic", placeholder="e.g. Python, SQL, Machine Learning", key="iv_topic"
+    )
+    level = st.selectbox("Level", ["fresher", "junior", "intermediate"], key="iv_level")
+
+    if st.button("Get a question", type="primary"):
+        if not topic.strip():
+            st.warning("Enter a topic first.")
+        else:
+            with st.spinner("Preparing a question..."):
+                try:
+                    q = get_interview_question(
+                        topic.strip(), level, st.session_state.asked
+                    )
+                    st.session_state.current_q = q
+                    st.session_state.current_topic = topic.strip()
+                    st.session_state.asked.append(q)
+                    st.session_state.feedback = None
+                except Exception as e:
+                    st.error(error_text(e))
+
+    current_q = st.session_state.get("current_q")
+    if current_q:
+        st.divider()
+        st.subheader(current_q)
+        answer = st.text_area(
+            "Your answer", height=150, key=f"iv_ans_{len(st.session_state.asked)}"
+        )
+        if st.button("Get feedback"):
+            if not answer.strip():
+                st.warning("Write your answer first.")
+            else:
+                with st.spinner("Evaluating..."):
+                    try:
+                        st.session_state.feedback = evaluate_answer(
+                            st.session_state.current_topic, current_q, answer
+                        )
+                    except Exception as e:
+                        st.error(error_text(e))
+        if st.session_state.get("feedback"):
+            st.markdown(st.session_state.feedback)
