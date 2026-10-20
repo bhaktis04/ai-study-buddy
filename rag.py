@@ -10,8 +10,8 @@ SYSTEM_PROMPT = """You are AI Study Buddy, a friendly tutor who explains in simp
 Rules:
 - Use the CONTEXT from the student's notes to answer.
 - Explain step by step and include a short example when useful.
-- If the context doesn't contain the answer, say so clearly, then give a brief
-  general explanation labeled "From general knowledge".
+- If the context doesn't contain the answer, start your reply with the exact words
+  "From general knowledge:" and then give a brief general explanation.
 """
 
 
@@ -32,6 +32,7 @@ def format_history(history, last_n=6):
 
 
 def build_prompt(question, history, context):
+    """Combine rules, chat history, retrieved notes and the question into one prompt."""
     return f"""{SYSTEM_PROMPT}
 
 CHAT HISTORY:
@@ -46,10 +47,15 @@ ANSWER:"""
 
 
 def format_source(doc):
-    """Return 'file.pdf (page 3)' or just 'file.md' for text files."""
+    """Return 'file.pdf (page 3)' for PDFs, or just 'file.md' for text files."""
     name = Path(doc.metadata.get("source", "unknown")).name
     page = doc.metadata.get("page")
     return f"{name} (page {page + 1})" if page is not None else name
+
+
+def used_general_knowledge(answer):
+    """True if the model said it answered without using the student's notes."""
+    return answer.lstrip("*_# \n").lower().startswith("from general knowledge")
 
 
 def ask(question, history):
@@ -57,7 +63,17 @@ def ask(question, history):
     docs = get_retriever().invoke(question)
     context = "\n\n".join(d.page_content for d in docs)
     answer = ask_llm(build_prompt(question, history, context))
-    sources = sorted({format_source(d) for d in docs})
+
+    # Don't show sources when the answer didn't come from the notes
+    if used_general_knowledge(answer):
+        return answer, []
+
+    # Unique sources, kept in relevance order
+    sources = []
+    for d in docs:
+        s = format_source(d)
+        if s not in sources:
+            sources.append(s)
     return answer, sources
 
 
