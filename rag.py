@@ -87,4 +87,3 @@ if __name__ == "__main__":
             continue
         a, s = ask(q, history)
         print("\nTutor:", a, "\nSources:", s, "\n")
-        history += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]

@@ -1,0 +1,27 @@
+.block-container {
+    padding-top: 2.5rem;
+    max-width: 900px;
+}
+
+h1 {
+    font-weight: 700;
+    letter-spacing: -0.5px;
+}
+
+[data-testid="stSidebar"] {
+    border-right: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+[data-testid="stSidebar"] h1 {
+    font-size: 1.6rem;
+}
+
+.stButton > button {
+    border-radius: 10px;
+    font-weight: 500;
+}
+
+[data-testid="stSidebar"] button[kind="primary"],
+[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {
+    width: 100%;
+}
