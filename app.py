@@ -4,7 +4,8 @@ import streamlit as st
 
 import db
 import ui
-from ingest import DATA_DIR, build_vectorstore
+from docs_page import render_documents_page
+from ingest import DATA_DIR, add_files
 from interview import evaluate_and_next, get_interview_question
 from llm import friendly_error
 from quiz import generate_quiz
@@ -14,7 +15,7 @@ st.set_page_config(page_title="AI Study Buddy", page_icon="🤖")
 ui.load_css()
 db.init_db()
 
-PAGES = ["Study Chat", "History", "Quizzes", "Interview Practice"]
+PAGES = ["Study Chat", "History", "Quizzes", "Interview Practice", "Documents"]
 
 # ---------- Session state ----------
 st.session_state.setdefault("session_id", None)
@@ -60,15 +61,21 @@ with st.sidebar:
             st.warning("Choose at least one file first.")
         else:
             Path(DATA_DIR).mkdir(exist_ok=True)
+            saved = []
             for f in uploaded:
-                (Path(DATA_DIR) / f.name).write_bytes(f.getbuffer())
+                target = Path(DATA_DIR) / f.name
+                target.write_bytes(f.getbuffer())
+                saved.append(str(target))
             with st.spinner("Reading and indexing..."):
-                try:
-                    pages, chunks = build_vectorstore()
-                    get_retriever.cache_clear()
-                    st.success(f"Indexed {pages} pages into {chunks} chunks")
-                except Exception as e:
-                    st.error(f"Could not index the documents: {e}")
+                results = add_files(saved)
+            get_retriever.cache_clear()
+            for r in results:
+                if r.get("error"):
+                    st.error(f"{r['name']}: could not be read ({r['error']})")
+                elif r["chunks"] == 0:
+                    st.warning(f"{r['name']}: no readable text found (a scanned PDF?).")
+                else:
+                    st.success(f"{r['name']}: {r['pages']} pages, {r['chunks']} chunks")
 
 page = st.session_state.page
 
@@ -189,6 +196,10 @@ elif page == "Quizzes":
                     st.error(f"Q{i + 1}: Wrong. Correct answer: {correct}")
                 st.caption(q["explanation"])
             st.subheader(f"Score: {result['score']}/{len(quiz)}")
+
+# ---------- Documents ----------
+elif page == "Documents":
+    render_documents_page()
 
 # ---------- Interview Practice ----------
 else:

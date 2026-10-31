@@ -56,7 +56,6 @@ QUESTION: {question}
 
 ANSWER:"""
 
-
 def format_source(doc):
     """Return 'file.pdf (page 3)' for PDFs, or just 'file.md' for text files."""
     name = Path(doc.metadata.get("source", "unknown")).name
