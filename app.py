@@ -5,10 +5,10 @@ import streamlit as st
 import db
 import ui
 from ingest import DATA_DIR, build_vectorstore
-from interview import evaluate_answer, get_interview_question
+from interview import evaluate_and_next, get_interview_question
 from llm import friendly_error
 from quiz import generate_quiz
-from rag import ask, get_retriever
+from rag import ask, get_retriever, has_index
 
 st.set_page_config(page_title="AI Study Buddy", page_icon="🤖")
 ui.load_css()
@@ -19,7 +19,6 @@ PAGES = ["Study Chat", "History", "Quizzes", "Interview Practice"]
 # ---------- Session state ----------
 st.session_state.setdefault("session_id", None)
 st.session_state.setdefault("page", "Study Chat")
-st.session_state.setdefault("asked", [])
 st.session_state.setdefault("quiz_id", 0)
 
 
@@ -73,6 +72,13 @@ with st.sidebar:
 
 page = st.session_state.page
 
+if page in ("Study Chat", "Quizzes") and not has_index():
+    st.warning(
+        "No study notes indexed yet. Upload a file in the sidebar and click "
+        "'Process documents' to get answers from your own material. "
+        "Until then, answers come from general knowledge."
+    )
+
 # ---------- Study Chat ----------
 if page == "Study Chat":
     ui.page_header("Study Chat", "Ask anything about your study material...")
@@ -119,10 +125,10 @@ elif page == "History":
                 st.session_state.session_id = None
             st.rerun()
 
-    st.subheader("Quiz scores")
+    st.subheader("Quiz and interview scores")
     results = db.get_quiz_results()
     if not results:
-        st.caption("No quiz attempts yet.")
+        st.caption("No attempts yet.")
     for topic, score, total, when in results:
         st.write(f"{when} — {topic}: **{score}/{total}**")
 
@@ -186,46 +192,132 @@ elif page == "Quizzes":
 
 # ---------- Interview Practice ----------
 else:
-    ui.page_header("Interview Practice", "Practice questions and get instant feedback.")
-
-    topic = st.text_input(
-        "Topic", placeholder="e.g. Python, SQL, Machine Learning", key="iv_topic"
+    ui.page_header(
+        "Interview Practice",
+        "A mock interview: answer in the chat and get feedback on every reply.",
     )
-    level = st.selectbox("Level", ["fresher", "junior", "intermediate"], key="iv_level")
+    ss = st.session_state
+    ss.setdefault("iv_active", False)
+    ss.setdefault("iv_done", False)
+    ss.setdefault("iv_msgs", [])
+    ss.setdefault("iv_asked", [])
+    ss.setdefault("iv_scores", [])
+    ss.setdefault("iv_saved", False)
 
-    if st.button("Get a question", type="primary"):
-        if not topic.strip():
-            st.warning("Enter a topic first.")
-        else:
-            with st.spinner("Preparing a question..."):
+    # ----- 1. Setup -----
+    if not ss.iv_active and not ss.iv_done:
+        topic = st.text_input(
+            "Topic", placeholder="e.g. Python, SQL, Machine Learning", key="iv_topic_input"
+        )
+        level = st.selectbox("Level", ["fresher", "junior", "intermediate"], key="iv_level_input")
+
+        if st.button("Start interview", type="primary"):
+            if not topic.strip():
+                st.warning("Enter a topic first.")
+            else:
+                with st.spinner("Your interviewer is getting ready..."):
+                    try:
+                        q = get_interview_question(topic.strip(), level)
+                    except Exception as e:
+                        st.error(error_text(e))
+                        st.stop()
+                ss.iv_topic, ss.iv_level = topic.strip(), level
+                ss.iv_question = q
+                ss.iv_asked = [q]
+                ss.iv_scores = []
+                ss.iv_saved = False
+                ss.iv_msgs = [{
+                    "role": "assistant",
+                    "content": f"Hi! I'll be your interviewer for **{ss.iv_topic}**. "
+                               f"Let's begin.\n\n**Question 1:** {q}",
+                }]
+                ss.iv_active = True
+                st.rerun()
+
+    # ----- 2. Live interview chat -----
+    elif ss.iv_active:
+        c1, c2, c3 = st.columns([3, 1.3, 1.3])
+        c1.caption(f"{ss.iv_topic} · {ss.iv_level} · {len(ss.iv_scores)} answered")
+
+        if c2.button("Skip question"):
+            with st.spinner("Finding another question..."):
                 try:
-                    q = get_interview_question(
-                        topic.strip(), level, st.session_state.asked
-                    )
-                    st.session_state.current_q = q
-                    st.session_state.current_topic = topic.strip()
-                    st.session_state.asked.append(q)
-                    st.session_state.feedback = None
+                    q = get_interview_question(ss.iv_topic, ss.iv_level, ss.iv_asked)
                 except Exception as e:
                     st.error(error_text(e))
+                    st.stop()
+            ss.iv_question = q
+            ss.iv_asked.append(q)
+            ss.iv_msgs.append({
+                "role": "assistant",
+                "content": f"No problem, here's another one.\n\n"
+                           f"**Question {len(ss.iv_asked)}:** {q}",
+            })
+            st.rerun()
 
-    current_q = st.session_state.get("current_q")
-    if current_q:
-        st.divider()
-        st.subheader(current_q)
-        answer = st.text_area(
-            "Your answer", height=150, key=f"iv_ans_{len(st.session_state.asked)}"
-        )
-        if st.button("Get feedback"):
-            if not answer.strip():
-                st.warning("Write your answer first.")
-            else:
+        if c3.button("End interview"):
+            ss.iv_active = False
+            ss.iv_done = True
+            st.rerun()
+
+        for m in ss.iv_msgs:
+            with st.chat_message(m["role"]):
+                st.markdown(m["content"])
+
+        if answer := st.chat_input("Type your answer..."):
+            with st.chat_message("user"):
+                st.markdown(answer)
+            with st.chat_message("assistant"):
                 with st.spinner("Evaluating..."):
                     try:
-                        st.session_state.feedback = evaluate_answer(
-                            st.session_state.current_topic, current_q, answer
+                        result = evaluate_and_next(
+                            ss.iv_topic, ss.iv_level, ss.iv_question, answer, ss.iv_asked
                         )
                     except Exception as e:
                         st.error(error_text(e))
-        if st.session_state.get("feedback"):
-            st.markdown(st.session_state.feedback)
+                        st.stop()
+                number = len(ss.iv_asked) + 1
+                reply = f"{result['feedback']}\n\n---\n**Question {number}:** {result['next_question']}"
+                st.markdown(reply)
+
+            ss.iv_msgs += [
+                {"role": "user", "content": answer},
+                {"role": "assistant", "content": reply},
+            ]
+            if result["score"] is not None:
+                ss.iv_scores.append((ss.iv_question, result["score"]))
+            ss.iv_question = result["next_question"]
+            ss.iv_asked.append(result["next_question"])
+
+    # ----- 3. Summary -----
+    else:
+        scores = ss.iv_scores
+        st.subheader("Interview summary")
+        if not scores:
+            st.info("You ended the interview before answering any question.")
+        else:
+            total = sum(s for _, s in scores)
+            avg = total / len(scores)
+            if not ss.iv_saved:
+                db.save_quiz_result(f"Interview: {ss.iv_topic}", round(total), 10 * len(scores))
+                ss.iv_saved = True
+
+            m1, m2 = st.columns(2)
+            m1.metric("Average score", f"{avg:.1f}/10")
+            m2.metric("Questions answered", len(scores))
+            for i, (q, s) in enumerate(scores, 1):
+                st.write(f"{i}. {q} — **{s:g}/10**")
+
+            if avg >= 8:
+                st.success("Strong performance. Keep practising harder questions.")
+            elif avg >= 5:
+                st.info("Good start. Review the model answers and try again.")
+            else:
+                st.warning("Needs more practice. Revisit your notes on this topic.")
+
+        if st.button("Start a new interview", type="primary"):
+            ss.iv_active = False
+            ss.iv_done = False
+            ss.iv_msgs, ss.iv_asked, ss.iv_scores = [], [], []
+            ss.iv_saved = False
+            st.rerun()

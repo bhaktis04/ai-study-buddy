@@ -1,4 +1,8 @@
-from llm import ask_llm
+import re
+
+from llm import ask_llm, friendly_error
+
+NEXT_MARKER = "===NEXT==="
 
 
 def get_interview_question(topic, level="fresher", asked=None):
@@ -13,7 +17,7 @@ Return only the question text, with no numbering and no extra words."""
 
 
 def evaluate_answer(topic, question, answer):
-    """Score the candidate's answer out of 10 and give feedback."""
+    """Score a single answer out of 10 and give feedback."""
     prompt = f"""You are a friendly but honest interviewer for {topic}.
 
 Question: {question}
@@ -28,46 +32,72 @@ Give feedback in exactly this format, in under 150 words:
     return ask_llm(prompt, temperature=0.3)
 
 
-def friendly_error(e):
-    """Turn an API exception into a short message instead of a long traceback."""
-    msg = str(e)
-    if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-        return ("Gemini free-tier limit reached. Wait a while, or set a different "
-                "GEMINI_MODEL in .env.")
-    if "404" in msg or "NOT_FOUND" in msg:
-        return "Model not found. Check GEMINI_MODEL in .env."
-    return f"Something went wrong ({type(e).__name__}). Try again."
+def _parse_score(text):
+    m = re.search(r"Score:\W*(\d+(?:\.\d+)?)\s*/\s*10", text, re.IGNORECASE)
+    if not m:
+        return None
+    return max(0.0, min(10.0, float(m.group(1))))
+
+
+def evaluate_and_next(topic, level, question, answer, asked):
+    """Feedback on the answer AND the next question, in one Gemini request.
+
+    Returns a dict: feedback (str), next_question (str), score (float or None).
+    """
+    asked_text = "\n".join(f"- {q}" for q in asked) or "(none)"
+    prompt = f"""You are a friendly but honest interviewer for {topic} ({level} level).
+
+Question: {question}
+Candidate's answer: {answer}
+
+Reply in exactly this format:
+**Score:** X/10
+**What was good:** ...
+**What to improve:** ...
+**Model answer:** a short ideal answer
+{NEXT_MARKER}
+One NEW interview question on {topic}. Do not repeat any of these:
+{asked_text}
+Write only the question text after the marker, with no label or numbering.
+Keep the feedback part under 150 words.
+"""
+    raw = ask_llm(prompt, temperature=0.4)
+    feedback, _, next_q = raw.partition(NEXT_MARKER)
+    feedback = feedback.strip()
+    next_q = re.sub(r"^(next question|question)\s*\d*\s*[:\-]\s*", "", next_q.strip(),
+                    flags=re.IGNORECASE)
+
+    if not next_q:  # the model skipped the marker, so ask for a question separately
+        next_q = get_interview_question(topic, level, asked)
+
+    return {"feedback": feedback, "next_question": next_q, "score": _parse_score(feedback)}
 
 
 if __name__ == "__main__":
     topic = input("Topic (e.g. Python, SQL, Machine Learning): ").strip() or "Python"
-    asked = []
-    question = None
+    level = "fresher"
+    try:
+        question = get_interview_question(topic, level)
+    except Exception as e:
+        print(friendly_error(e))
+        raise SystemExit
+    asked = [question]
 
     while True:
-        # Only ask Gemini for a new question when we don't have one pending
-        if question is None:
-            try:
-                question = get_interview_question(topic, asked=asked)
-            except Exception as e:
-                print("\n" + friendly_error(e))
-                break
-            asked.append(question)
-            print("\nQuestion:", question)
-
-        answer = input("Your answer ('skip' for a new question, 'exit' to quit): ").strip()
-
+        print("\nQuestion:", question)
+        answer = input("Your answer ('skip' or 'exit'): ").strip()
         if answer.lower() in ("exit", "quit"):
             break
-        if answer.lower() == "skip":
-            question = None
+        if not answer:
             continue
-        if not answer:          # empty Enter costs nothing and asks nothing
-            continue
-
         try:
-            print("\n" + evaluate_answer(topic, question, answer) + "\n")
+            if answer.lower() == "skip":
+                question = get_interview_question(topic, level, asked)
+            else:
+                result = evaluate_and_next(topic, level, question, answer, asked)
+                print("\n" + result["feedback"])
+                question = result["next_question"]
         except Exception as e:
             print("\n" + friendly_error(e))
-            continue            # keep the same question so you can retry the answer
-        question = None 
+            continue
+        asked.append(question)

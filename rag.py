@@ -22,6 +22,17 @@ def get_retriever(k=4):
     return db.as_retriever(search_kwargs={"k": k})
 
 
+def has_index():
+    """True if the vector store exists and contains at least one chunk."""
+    if not Path(DB_DIR).exists():
+        return False
+    try:
+        db = Chroma(persist_directory=DB_DIR, embedding_function=get_embeddings())
+        return len(db.get(limit=1)["ids"]) > 0
+    except Exception:
+        return False
+
+
 def format_history(history, last_n=6):
     """Turn the last few chat messages into plain text for the prompt."""
     lines = []
@@ -87,3 +98,4 @@ if __name__ == "__main__":
             continue
         a, s = ask(q, history)
         print("\nTutor:", a, "\nSources:", s, "\n")
+        history += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
