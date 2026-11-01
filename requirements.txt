@@ -10,3 +10,5 @@ sentence-transformers
 pypdf
 python-dotenv
 pytest
+reportlab
+reportlab

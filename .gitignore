@@ -5,3 +5,7 @@ study_buddy.db
 __pycache__/
 .pytest_cache/
 .venv/
+
+sample_report.*
+
+sample_report.*

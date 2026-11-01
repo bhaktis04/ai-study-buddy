@@ -10,6 +10,7 @@ from interview import evaluate_and_next, get_interview_question
 from llm import friendly_error
 from quiz import generate_quiz
 from rag import ask, get_retriever, has_index
+from report import build_markdown, build_pdf, report_filename
 
 st.set_page_config(page_title="AI Study Buddy", page_icon="🤖")
 ui.load_css()
@@ -213,6 +214,7 @@ else:
     ss.setdefault("iv_msgs", [])
     ss.setdefault("iv_asked", [])
     ss.setdefault("iv_scores", [])
+    ss.setdefault("iv_log", [])
     ss.setdefault("iv_saved", False)
 
     # ----- 1. Setup -----
@@ -236,6 +238,7 @@ else:
                 ss.iv_question = q
                 ss.iv_asked = [q]
                 ss.iv_scores = []
+                ss.iv_log = []
                 ss.iv_saved = False
                 ss.iv_msgs = [{
                     "role": "assistant",
@@ -297,6 +300,12 @@ else:
             ]
             if result["score"] is not None:
                 ss.iv_scores.append((ss.iv_question, result["score"]))
+            ss.iv_log.append({
+                "question": ss.iv_question,
+                "answer": answer,
+                "feedback": result["feedback"],
+                "score": result["score"],
+            })
             ss.iv_question = result["next_question"]
             ss.iv_asked.append(result["next_question"])
 
@@ -326,9 +335,31 @@ else:
             else:
                 st.warning("Needs more practice. Revisit your notes on this topic.")
 
+        if ss.iv_log:
+            st.divider()
+            st.subheader("Download your report")
+            d1, d2 = st.columns(2)
+            d1.download_button(
+                "Download Markdown",
+                data=build_markdown(ss.iv_topic, ss.iv_level, ss.iv_log).encode("utf-8"),
+                file_name=report_filename(ss.iv_topic, "md"),
+                mime="text/markdown",
+                key="dl_md",
+            )
+            try:
+                d2.download_button(
+                    "Download PDF",
+                    data=build_pdf(ss.iv_topic, ss.iv_level, ss.iv_log),
+                    file_name=report_filename(ss.iv_topic, "pdf"),
+                    mime="application/pdf",
+                    key="dl_pdf",
+                )
+            except Exception as e:
+                d2.error(f"PDF unavailable: {e}")
+
         if st.button("Start a new interview", type="primary"):
             ss.iv_active = False
             ss.iv_done = False
-            ss.iv_msgs, ss.iv_asked, ss.iv_scores = [], [], []
+            ss.iv_msgs, ss.iv_asked, ss.iv_scores, ss.iv_log = [], [], [], []
             ss.iv_saved = False
             st.rerun()
