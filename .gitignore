@@ -9,3 +9,5 @@ __pycache__/
 sample_report.*
 
 sample_report.*
+
+.venv*/
