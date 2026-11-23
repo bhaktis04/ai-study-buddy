@@ -1,0 +1,12 @@
+$kind: http-request
+description: Check that the API is running and whether any notes are indexed.
+url: "{{baseUrl}}/health"
+method: GET
+headers:
+  Accept: application/json
+body:
+  type: text
+  content: ""
+settings: {}
+examples: ./.resources/Health.resources/examples
+order: 1000

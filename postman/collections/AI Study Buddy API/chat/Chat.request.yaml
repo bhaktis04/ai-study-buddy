@@ -1,0 +1,43 @@
+$kind: http-request
+description: Ask a question. Answers come from your indexed notes, with sources.
+url: "{{baseUrl}}/chat"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+body:
+  type: json
+  content: |-
+    {
+      "question": "What is a decorator in Python?"
+    }
+  $type: |-
+    {
+      "title": "ChatRequest",
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "title": "Question"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "description": "Send the id from an earlier reply to continue that chat.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "question"
+      ]
+    }
+settings: {}
+examples: ./.resources/Chat.resources/examples
+order: 1000
