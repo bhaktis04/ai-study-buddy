@@ -1,4 +1,0 @@
-$kind: collection
-description: "RAG-based tutoring API: chat with your notes, quizzes, mock interviews."
-variables:
-  baseUrl: /
