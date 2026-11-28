@@ -11,3 +11,6 @@ sample_report.*
 sample_report.*
 
 .venv*/
+
+.postman/
+response.json

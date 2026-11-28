@@ -1,0 +1,12 @@
+$kind: http-request
+description: List saved chats, newest first.
+url: "{{baseUrl}}/sessions"
+method: GET
+headers:
+  Accept: application/json
+body:
+  type: text
+  content: ""
+settings: {}
+examples: ./.resources/List Sessions.resources/examples
+order: 1000

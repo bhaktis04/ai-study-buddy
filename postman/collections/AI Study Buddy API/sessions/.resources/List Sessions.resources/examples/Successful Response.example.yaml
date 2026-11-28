@@ -1,0 +1,58 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/sessions"
+  method: GET
+  headers:
+    Accept: application/json
+  body:
+    type: text
+    content: ""
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      [
+        {
+          "id": "string",
+          "title": "string",
+          "created_at": "string"
+        },
+        {
+          "id": "string",
+          "title": "string",
+          "created_at": "string"
+        }
+      ]
+    $type: |-
+      {
+        "type": "array",
+        "title": "Response List Sessions Sessions Get",
+        "items": {
+          "title": "SessionInfo",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "title": "Id"
+            },
+            "title": {
+              "type": "string",
+              "title": "Title"
+            },
+            "created_at": {
+              "type": "string",
+              "title": "Created At"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "created_at"
+          ]
+        }
+      }
+order: 1000

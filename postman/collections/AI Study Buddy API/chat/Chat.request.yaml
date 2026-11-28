@@ -1,0 +1,36 @@
+$kind: http-request
+description: Ask a question. Answers come from your indexed notes, with sources.
+url: http://127.0.0.1:8000/chat
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+body:
+  type: json
+  content: |-
+    {
+      "question": "What is a decorator in Python?"
+    }
+scripts:
+  - type: afterResponse
+    code: "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));\r
+
+      \r
+
+      pm.test(\"Has answer and sources\", () => {\r
+
+      \  const body = pm.response.json();\r
+
+      \  pm.expect(body.answer).to.be.a(\"string\").and.not.empty;\r
+
+      \  pm.expect(body.sources).to.be.an(\"array\");\r
+
+      });\r
+
+      \r
+
+      pm.collectionVariables.set(\"session_id\", pm.response.json().session_id);"
+    language: text/javascript
+settings: {}
+examples: ./.resources/Chat.resources/examples
+order: 1000
